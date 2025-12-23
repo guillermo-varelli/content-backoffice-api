@@ -37,7 +37,7 @@ func (u *User) CheckPassword(password string) bool {
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.Scopes == "" {
 		// Scopes por defecto si no se especifican
-		u.Scopes = `["agents:read","agents:write","workflows:read","workflows:write","steps:read","steps:write","n:read","n:write"]`
+		u.Scopes = `["agents:read","agents:write","workflows:read","workflows:write","steps:read","steps:write","step-executions:read","step-executions:write","n:read","n:write"]`
 	}
 	return nil
 }

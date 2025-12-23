@@ -81,6 +81,7 @@ func bootstrapAdminHandler(db *gorm.DB) gin.HandlerFunc {
 			"agents:read", "agents:write",
 			"workflows:read", "workflows:write",
 			"steps:read", "steps:write",
+			"step-executions:read", "step-executions:write",
 			"n:read", "n:write",
 			"users:admin",
 		}
@@ -142,6 +143,7 @@ func createUserHandler(db *gorm.DB) gin.HandlerFunc {
 				"agents:read", "agents:write",
 				"workflows:read", "workflows:write",
 				"steps:read", "steps:write",
+				"step-executions:read", "step-executions:write",
 				"n:read", "n:write",
 			}
 			scopesJSON, _ = json.Marshal(defaultScopes)
