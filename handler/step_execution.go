@@ -116,19 +116,52 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		c.JSON(http.StatusOK, list)
 	})
 
-	// PUT: Actualizar step executions por execution_id
-	g.PUT("/execution/:execution_id", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
-		executionID, err := strconv.ParseUint(c.Param("execution_id"), 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	// PUT: Actualizar step execution usando query params (execution_id y step_id)
+	g.PUT("", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
+		// Obtener execution_id del query param
+		executionIDStr := c.Query("execution_id")
+		if executionIDStr == "" {
+			// También aceptar executionId para compatibilidad
+			executionIDStr = c.Query("executionId")
+		}
+
+		// Obtener step_id del query param
+		stepIDStr := c.Query("step_id")
+		if stepIDStr == "" {
+			// También aceptar stepId para compatibilidad
+			stepIDStr = c.Query("stepId")
+		}
+
+		// Validar que al menos execution_id esté presente
+		if executionIDStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id query parameter is required"})
 			return
 		}
 
-		// Buscar la step execution por execution_id
+		executionID, err := strconv.ParseUint(executionIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution_id. Must be a number"})
+			return
+		}
+
+		// Construir la query de búsqueda
+		query := db.Where("execution_id = ?", executionID)
+
+		// Si step_id está presente, agregarlo a la búsqueda
+		if stepIDStr != "" {
+			stepID, err := strconv.ParseUint(stepIDStr, 10, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid step_id. Must be a number"})
+				return
+			}
+			query = query.Where("step_id = ?", stepID)
+		}
+
+		// Buscar la step execution
 		var se model.StepExecution
-		if err := db.Where("execution_id = ?", executionID).First(&se).Error; err != nil {
+		if err := query.First(&se).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found for this execution_id"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found for the given execution_id and step_id"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -184,86 +217,49 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		c.JSON(http.StatusOK, se)
 	})
 
-	// PUT: Actualizar step executions por execution_id (el parámetro :id se interpreta como execution_id)
-	g.PUT("/:id", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
-		executionID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	// PATCH: Actualización parcial usando query params (execution_id y step_id)
+	g.PATCH("", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
+		// Obtener execution_id del query param
+		executionIDStr := c.Query("execution_id")
+		if executionIDStr == "" {
+			executionIDStr = c.Query("executionId")
+		}
+
+		// Obtener step_id del query param
+		stepIDStr := c.Query("step_id")
+		if stepIDStr == "" {
+			stepIDStr = c.Query("stepId")
+		}
+
+		// Validar que al menos execution_id esté presente
+		if executionIDStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id query parameter is required"})
 			return
 		}
 
-		// Buscar la step execution por execution_id
-		var se model.StepExecution
-		if err := db.Where("execution_id = ?", executionID).First(&se).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found for this execution_id"})
+		executionID, err := strconv.ParseUint(executionIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution_id. Must be a number"})
+			return
+		}
+
+		// Construir la query de búsqueda
+		query := db.Where("execution_id = ?", executionID)
+
+		// Si step_id está presente, agregarlo a la búsqueda
+		if stepIDStr != "" {
+			stepID, err := strconv.ParseUint(stepIDStr, 10, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid step_id. Must be a number"})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-			return
-		}
-
-		// Parsear el JSON como un mapa para extraer solo los campos que nos interesan
-		var jsonData map[string]interface{}
-		if err := c.ShouldBindJSON(&jsonData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Preparar campos para actualizar usando Updates() para asegurar que se persista
-		updateFields := make(map[string]interface{})
-		
-		// Extraer status si existe en el JSON
-		if statusValue, exists := jsonData["status"]; exists && statusValue != nil {
-			if statusStr, ok := statusValue.(string); ok && statusStr != "" {
-				updateFields["status"] = statusStr
-			}
-		}
-		
-		// Extraer output si existe en el JSON
-		if outputValue, exists := jsonData["output"]; exists && outputValue != nil {
-			if outputStr, ok := outputValue.(string); ok {
-				updateFields["output"] = outputStr
-			}
-		}
-
-		if len(updateFields) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields to update. Expected 'status' or 'output'"})
-			return
-		}
-
-		// Usar Updates() en lugar de Save() para asegurar que los cambios se persistan
-		// Updates() solo actualiza los campos especificados y no requiere campos zero values
-		result := db.Model(&se).Updates(updateFields)
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update step execution", "details": result.Error.Error()})
-			return
-		}
-		
-		// Verificar que se actualizó al menos una fila
-		if result.RowsAffected == 0 {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found or no changes made"})
-			return
-		}
-
-		// Cargar relaciones actualizadas
-		db.Preload("Step").Preload("Execution").First(&se, se.ID)
-
-		c.JSON(http.StatusOK, se)
-	})
-
-	// PATCH: Actualización parcial de una step execution por execution_id
-	g.PATCH("/execution/:execution_id", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
-		executionID, err := strconv.ParseUint(c.Param("execution_id"), 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
-			return
+			query = query.Where("step_id = ?", stepID)
 		}
 
 		var se model.StepExecution
-		if err := db.Where("execution_id = ?", executionID).First(&se).Error; err != nil {
+		if err := query.First(&se).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found for this execution_id"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found for the given execution_id and step_id"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})

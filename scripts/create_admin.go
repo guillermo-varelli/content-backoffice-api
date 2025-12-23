@@ -67,4 +67,3 @@ func main() {
 	fmt.Printf("   User ID: %d\n", user.ID)
 	fmt.Printf("   Scopes: %s\n", string(scopesJSON))
 }
-

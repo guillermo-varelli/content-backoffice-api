@@ -6,4 +6,3 @@ type Execution struct {
 	Status     string `json:"status"`
 	// Agregar más campos según necesites
 }
-
