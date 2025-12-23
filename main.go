@@ -20,6 +20,8 @@ func main() {
 		&model.Agent{},
 		&model.Workflow{},
 		&model.Step{},
+		&model.Execution{},
+		&model.StepExecution{},
 		&model.N{},
 	)
 
@@ -35,6 +37,7 @@ func main() {
 	handler.RegisterAgentRoutes(r, db, cfg)
 	handler.RegisterWorkflowRoutes(r, db, cfg)
 	handler.RegisterStepRoutes(r, db, cfg)
+	handler.RegisterStepExecutionRoutes(r, db, cfg)
 	handler.RegisterNRoutes(r, db, cfg)
 
 	log.Fatal(r.Run(":8080"))

@@ -50,6 +50,7 @@ func main() {
 		"agents:read", "agents:write",
 		"workflows:read", "workflows:write",
 		"steps:read", "steps:write",
+		"step-executions:read", "step-executions:write",
 		"n:read", "n:write",
 		"users:admin",
 	}
