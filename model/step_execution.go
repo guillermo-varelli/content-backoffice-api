@@ -6,6 +6,6 @@ type StepExecution struct {
 	Step        Step      `gorm:"foreignKey:StepID" json:"step,omitempty"`
 	Status      string    `json:"status"`
 	ExecutionID uint64    `json:"execution_id"`
-	Execution   Execution `gorm:"foreignKey:ExecutionID" json:"execution,omitempty"`
+	Execution   Execution `gorm:"foreignKey:ExecutionID"`
 	Output      string    `gorm:"type:longtext" json:"output"`
 }
