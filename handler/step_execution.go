@@ -14,14 +14,11 @@ import (
 )
 
 func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
-	g := r.Group("/step-executions")
+	g := r.Group("/step-executions-grouped")
 	// Aplicar autenticación JWT a todas las rutas
 	g.Use(middleware.AuthMiddleware(cfg))
 
 	g.GET("", middleware.RequireScopes("step-executions:read"), func(c *gin.Context) {
-
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		size, _ := strconv.Atoi(c.DefaultQuery("size", "10"))
 
 		query := db.Model(&model.StepExecution{})
 
@@ -34,16 +31,39 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 		var list []model.StepExecution
 		if err := query.
-			Scopes(service.Paginate(page, size)).
 			Preload("Execution").
 			Preload("Step").
+			Order("execution_id, id").
 			Find(&list).Error; err != nil {
 
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch step executions"})
 			return
 		}
 
-		c.JSON(http.StatusOK, list)
+		// 🔥 AGRUPAR CORRECTAMENTE
+		groups := make(map[uint64]*model.StepExecutionGroupResponse)
+
+		for _, se := range list {
+			group, exists := groups[se.ExecutionID]
+			if !exists {
+				group = &model.StepExecutionGroupResponse{
+					ExecutionID: se.ExecutionID,
+					Execution:   *se.Execution,
+					Steps:       []model.StepExecution{},
+				}
+				groups[se.ExecutionID] = group
+			}
+
+			group.Steps = append(group.Steps, se)
+		}
+
+		// Convertir map → slice
+		response := make([]model.StepExecutionGroupResponse, 0, len(groups))
+		for _, group := range groups {
+			response = append(response, *group)
+		}
+
+		c.JSON(http.StatusOK, response)
 	})
 
 	// PUT: Actualizar step execution usando query params (execution_id y step_id)
