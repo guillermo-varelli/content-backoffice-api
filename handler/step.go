@@ -24,8 +24,43 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 		var steps []model.Step
 
 		if err := db.
-			Preload("Workflow").
+			Preload("Workflow", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id", "name", "description")
+			}).
 			Preload("Agent").
+			Find(&steps).Error; err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		response := make([]dto.StepResponseDto, 0, len(steps))
+		for _, s := range steps {
+			response = append(response, dto.ToStepResponse(s))
+		}
+
+		c.JSON(http.StatusOK, response)
+	})
+
+	// ======================
+	// GET /steps/by-workflow/:workflowId
+	// ======================
+	g.GET("/by-workflow/:workflowId", middleware.RequireScopes("steps:read"), func(c *gin.Context) {
+		workflowID, err := strconv.ParseUint(c.Param("workflowId"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workflow id"})
+			return
+		}
+
+		var steps []model.Step
+
+		if err := db.
+			Where("workflow_id = ?", workflowID).
+			Preload("Workflow", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id", "name", "description")
+			}).
+			Preload("Agent").
+			Order("order_index ASC").
 			Find(&steps).Error; err != nil {
 
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -69,8 +104,8 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			Name:          input.Name,
 			OperationType: input.OperationType,
 			Prompt:        input.Prompt,
-			Workflow:      workflow,
-			Agent:         agent,
+			WorkflowID:    workflow.ID,
+			AgentID:       &agent.ID,
 		}
 
 		if err := db.Create(&step).Error; err != nil {
@@ -78,7 +113,12 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			return
 		}
 
-		db.Preload("Workflow").Preload("Agent").First(&step, step.ID)
+		db.
+			Preload("Workflow", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id", "name", "description")
+			}).
+			Preload("Agent").
+			First(&step, step.ID)
 
 		c.JSON(http.StatusCreated, dto.ToStepResponse(step))
 	})
@@ -129,7 +169,12 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			return
 		}
 
-		db.Preload("Workflow").Preload("Agent").First(&existing, existing.ID)
+		db.
+			Preload("Workflow", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id", "name", "description")
+			}).
+			Preload("Agent").
+			First(&existing, existing.ID)
 
 		c.JSON(http.StatusOK, dto.ToStepResponse(existing))
 	})

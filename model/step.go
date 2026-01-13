@@ -7,9 +7,9 @@ type Step struct {
 	OperationType string
 	Prompt        string `gorm:"type:mediumtext"`
 
-	WorkflowID uint64 `json:"-" gorm:"column:workflow_id;not null"`
-	AgentID    *uint64 `json:"-" gorm:"column:agent_id"`
+	WorkflowID uint64
+	Workflow   Workflow `gorm:"foreignKey:WorkflowID;references:ID"`
 
-	Workflow Workflow `gorm:"foreignKey:WorkflowID;references:ID"`
-	Agent    Agent    `gorm:"foreignKey:AgentID;references:ID"`
+	AgentID *uint64
+	Agent   Agent `gorm:"foreignKey:AgentID;references:ID"`
 }

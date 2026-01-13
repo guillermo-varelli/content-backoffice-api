@@ -24,6 +24,8 @@ func ToStepResponse(s model.Step) StepResponseDto {
 		Workflow: WorkflowResponseDto{
 			ID:   s.Workflow.ID,
 			Name: s.Workflow.Name,
+			Description: s.Workflow.Description,
+
 		},
 		Agent: AgentResponseDto{
 			ID:       s.Agent.ID,
