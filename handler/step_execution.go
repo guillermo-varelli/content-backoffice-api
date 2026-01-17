@@ -32,6 +32,7 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		var list []model.StepExecution
 		if err := query.
 			Preload("Execution").
+			Preload("Execution.Workflow"). // Preload del Workflow
 			Preload("Step").
 			Order("execution_id, id").
 			Find(&list).Error; err != nil {
@@ -40,7 +41,7 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// 🔥 AGRUPAR CORRECTAMENTE
+		// Agrupar correctamente
 		groups := make(map[uint64]*model.StepExecutionGroupResponse)
 
 		for _, se := range list {
@@ -48,8 +49,16 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			if !exists {
 				group = &model.StepExecutionGroupResponse{
 					ExecutionID: se.ExecutionID,
-					Execution:   *se.Execution,
-					Steps:       []model.StepExecution{},
+					Execution: model.ExecutionResponse{
+						ID:     se.Execution.ID,
+						Status: se.Execution.Status,
+						Workflow: model.WorkflowResponse{
+							ID:          se.Execution.Workflow.ID,
+							Name:        se.Execution.Workflow.Name,
+							Description: se.Execution.Workflow.Description,
+						},
+					},
+					Steps: []model.StepExecution{},
 				}
 				groups[se.ExecutionID] = group
 			}
@@ -68,14 +77,11 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 	// PUT: Actualizar step execution usando query params (execution_id y step_id)
 	g.PUT("", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
-		// Obtener step exec id del query param
 		executionIDStr := c.Query("id")
 		if executionIDStr == "" {
-			// También aceptar executionId para compatibilidad
 			executionIDStr = c.Query("id")
 		}
 
-		// Validar que al menos execution_id esté presente
 		if executionIDStr == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id query parameter is required"})
 			return
@@ -87,10 +93,8 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Construir la query de búsqueda
 		query := db.Where("id = ?", stepExecutionID)
 
-		// Buscar la step execution
 		var se model.StepExecution
 		if err := query.First(&se).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -101,24 +105,20 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Parsear el JSON como un mapa para extraer solo los campos que nos interesan
 		var jsonData map[string]interface{}
 		if err := c.ShouldBindJSON(&jsonData); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Preparar campos para actualizar usando Updates() para asegurar que se persista
 		updateFields := make(map[string]interface{})
 
-		// Extraer status si existe en el JSON
 		if statusValue, exists := jsonData["status"]; exists && statusValue != nil {
 			if statusStr, ok := statusValue.(string); ok && statusStr != "" {
 				updateFields["status"] = statusStr
 			}
 		}
 
-		// Extraer output si existe en el JSON
 		if outputValue, exists := jsonData["output"]; exists && outputValue != nil {
 			if outputStr, ok := outputValue.(string); ok {
 				updateFields["output"] = outputStr
@@ -130,21 +130,17 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Usar Updates() en lugar de Save() para asegurar que los cambios se persistan
-		// Updates() solo actualiza los campos especificados y no requiere campos zero values
 		result := db.Model(&se).Updates(updateFields)
 		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update step execution", "details": result.Error.Error()})
 			return
 		}
 
-		// Verificar que se actualizó al menos una fila
 		if result.RowsAffected == 0 {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Step execution not found or no changes made"})
 			return
 		}
 
-		// Cargar relaciones actualizadas
 		db.Preload("Step").Preload("Execution").First(&se, se.ID)
 
 		c.JSON(http.StatusOK, se)
@@ -152,19 +148,16 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 	// PATCH: Actualización parcial usando query params (execution_id y step_id)
 	g.PATCH("", middleware.RequireScopes("step-executions:write"), func(c *gin.Context) {
-		// Obtener execution_id del query param
 		executionIDStr := c.Query("execution_id")
 		if executionIDStr == "" {
 			executionIDStr = c.Query("executionId")
 		}
 
-		// Obtener step_id del query param
 		stepIDStr := c.Query("step_id")
 		if stepIDStr == "" {
 			stepIDStr = c.Query("stepId")
 		}
 
-		// Validar que al menos execution_id esté presente
 		if executionIDStr == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id query parameter is required"})
 			return
@@ -176,10 +169,8 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Construir la query de búsqueda
 		query := db.Where("execution_id = ?", executionID)
 
-		// Si step_id está presente, agregarlo a la búsqueda
 		if stepIDStr != "" {
 			stepID, err := strconv.ParseUint(stepIDStr, 10, 64)
 			if err != nil {
@@ -205,7 +196,6 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Permitir actualizar solo status y output
 		allowedFields := map[string]bool{
 			"status": true,
 			"output": true,
@@ -214,7 +204,6 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		updateFields := make(map[string]interface{})
 		for key, value := range updateData {
 			if allowedFields[key] {
-				// Asegurar que no enviamos nil o valores inválidos
 				if value != nil {
 					updateFields[key] = value
 				}
@@ -226,13 +215,11 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// Usar Updates() que siempre persiste los cambios
 		if err := db.Model(&se).Updates(updateFields).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update step execution", "details": err.Error()})
 			return
 		}
 
-		// Cargar relaciones actualizadas
 		db.Preload("Step").Preload("Execution").First(&se, se.ID)
 
 		c.JSON(http.StatusOK, se)
