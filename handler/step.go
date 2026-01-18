@@ -77,6 +77,7 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 
 	// ======================
 	// POST /steps
+	// AgentID OPCIONAL (0 = null)
 	// ======================
 	g.POST("", middleware.RequireScopes("steps:write"), func(c *gin.Context) {
 		var input dto.StepInputDto
@@ -85,18 +86,23 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			return
 		}
 
-		// validar workflow
+		// validar workflow (obligatorio)
 		var workflow model.Workflow
 		if err := db.First(&workflow, input.WorkflowID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "workflow not found"})
 			return
 		}
 
-		// validar agent
-		var agent model.Agent
-		if err := db.First(&agent, input.AgentID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
-			return
+		// Agent opcional
+		var agentID *uint64 = nil
+
+		if input.AgentID != 0 {
+			var agent model.Agent
+			if err := db.First(&agent, input.AgentID).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
+				return
+			}
+			agentID = &agent.ID
 		}
 
 		step := model.Step{
@@ -105,7 +111,7 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			OperationType: input.OperationType,
 			Prompt:        input.Prompt,
 			WorkflowID:    workflow.ID,
-			AgentID:       &agent.ID,
+			AgentID:       agentID, // nil si AgentID == 0
 		}
 
 		if err := db.Create(&step).Error; err != nil {
@@ -125,6 +131,7 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 
 	// ======================
 	// PUT /steps/:id
+	// AgentID OBLIGATORIO (como antes)
 	// ======================
 	g.PUT("/:id", middleware.RequireScopes("steps:write"), func(c *gin.Context) {
 		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -145,11 +152,13 @@ func RegisterStepRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
 			return
 		}
 
-		// validar relaciones
+		// validar workflow
 		if err := db.First(&model.Workflow{}, input.WorkflowID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "workflow not found"})
 			return
 		}
+
+		// validar agent (OBLIGATORIO en update)
 		if err := db.First(&model.Agent{}, input.AgentID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
 			return
