@@ -63,7 +63,18 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 				groups[se.ExecutionID] = group
 			}
 
-			group.Steps = append(group.Steps, se)
+			// Incluir los campos `CreatedAt` y `UpdatedAt` en cada `StepExecution`
+			group.Steps = append(group.Steps, model.StepExecution{
+				ID:          se.ID,
+				StepID:      se.StepID,
+				Step:        se.Step,
+				Status:      se.Status,
+				ExecutionID: se.ExecutionID,
+				Execution:   se.Execution,
+				Output:      se.Output,
+				CreatedAt:   se.CreatedAt, // Agregar CreatedAt
+				UpdatedAt:   se.UpdatedAt, // Agregar UpdatedAt
+			})
 		}
 
 		// Convertir map → slice
