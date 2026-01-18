@@ -1,8 +1,7 @@
 package dto
 
 type WorkflowResponseDto struct {
-	ID   uint64 `json:"id"`
-	Name string `json:"name"`
-	Description string `json:"description"`
-
+	ID          uint64 `json:"id"`
+	Name        string `json:"Name"`
+	Description string `json:"Description"`
 }
