@@ -19,7 +19,7 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 	g.Use(middleware.AuthMiddleware(cfg))
 
 	// =========================
-	// GET: List grouped step executions
+	// GET: List grouped step executions (DESC)
 	// =========================
 	g.GET("", middleware.RequireScopes("step-executions:read"), func(c *gin.Context) {
 
@@ -63,7 +63,7 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			Preload("Execution").
 			Preload("Execution.Workflow").
 			Preload("Step").
-			Order("execution_id, id").
+			Order("execution_id DESC, id DESC").
 			Find(&list).Error; err != nil {
 
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -72,8 +72,9 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		// ===== Group by execution_id =====
+		// ===== Group by execution_id (DESC preserved) =====
 		groups := make(map[uint64]*model.StepExecutionGroupResponse)
+		order := make([]uint64, 0)
 
 		for _, se := range list {
 			group, exists := groups[se.ExecutionID]
@@ -92,14 +93,15 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 					Steps: []model.StepExecution{},
 				}
 				groups[se.ExecutionID] = group
+				order = append(order, se.ExecutionID)
 			}
 
 			group.Steps = append(group.Steps, se)
 		}
 
-		response := make([]model.StepExecutionGroupResponse, 0, len(groups))
-		for _, group := range groups {
-			response = append(response, *group)
+		response := make([]model.StepExecutionGroupResponse, 0, len(order))
+		for _, executionID := range order {
+			response = append(response, *groups[executionID])
 		}
 
 		c.JSON(http.StatusOK, response)
@@ -168,11 +170,10 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			return
 		}
 
-		result := db.Model(&se).Updates(updateFields)
-		if result.Error != nil {
+		if err := db.Model(&se).Updates(updateFields).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to update step execution",
-				"details": result.Error.Error(),
+				"details": err.Error(),
 			})
 			return
 		}
