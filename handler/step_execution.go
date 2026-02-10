@@ -18,9 +18,27 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 	g.Use(middleware.AuthMiddleware(cfg))
 
 	// =========================
-	// GET: List grouped step executions
+	// GET: List grouped step executions (with pagination)
 	// =========================
 	g.GET("", middleware.RequireScopes("step-executions:read"), func(c *gin.Context) {
+
+		// ===== pagination =====
+		page := 1
+		pageSize := 30
+
+		if p := c.Query("page"); p != "" {
+			if v, err := strconv.Atoi(p); err == nil && v > 0 {
+				page = v
+			}
+		}
+
+		if ps := c.Query("pageSize"); ps != "" {
+			if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+				pageSize = v
+			}
+		}
+
+		offset := (page - 1) * pageSize
 
 		query := db.
 			Model(&model.StepExecution{}).
@@ -58,6 +76,13 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			query = query.Where("step_executions.created_at <= ?", t)
 		}
 
+		// ===== total count =====
+		var total int64
+		if err := query.Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "count error"})
+			return
+		}
+
 		// ===== fetch =====
 		var list []model.StepExecution
 		if err := query.
@@ -65,6 +90,8 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			Preload("Execution.Workflow").
 			Preload("Step").
 			Order("step_executions.execution_id DESC, step_executions.id DESC").
+			Limit(pageSize).
+			Offset(offset).
 			Find(&list).Error; err != nil {
 
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
@@ -103,7 +130,15 @@ func RegisterStepExecutionRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			resp = append(resp, *groups[id])
 		}
 
-		c.JSON(http.StatusOK, resp)
+		c.JSON(http.StatusOK, gin.H{
+			"data": resp,
+			"pagination": gin.H{
+				"page":       page,
+				"pageSize":   pageSize,
+				"total":      total,
+				"totalPages": (total + int64(pageSize) - 1) / int64(pageSize),
+			},
+		})
 	})
 
 	// =========================
