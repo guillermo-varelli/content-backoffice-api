@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"example.com/workflowapi/config"
@@ -37,15 +39,79 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 		var entities []model.N
 
-		if err := db.
-			Order("created desc").
+		// 🔎 Query params
+		status := c.Query("status")
+		executionID := c.Query("execution_id")
+		category := c.Query("category")
+		from := c.Query("from")
+		to := c.Query("to")
+
+		// 📄 Paginación
+		pageStr := c.DefaultQuery("page", "1")
+		limitStr := c.DefaultQuery("limit", "20")
+		sort := c.DefaultQuery("sort", "created desc")
+
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 || limit > 200 {
+			limit = 20
+		}
+
+		offset := (page - 1) * limit
+
+		query := db.Model(&model.N{})
+
+		// 🟢 Filtros
+		if status != "" {
+			query = query.Where("status = ?", status)
+		}
+
+		if executionID != "" {
+			query = query.Where("execution_id = ?", executionID)
+		}
+
+		if category != "" {
+			query = query.Where("category = ?", category)
+		}
+
+		if from != "" {
+			if fromTime, err := time.Parse("2006-01-02", from); err == nil {
+				query = query.Where("created >= ?", fromTime)
+			}
+		}
+
+		if to != "" {
+			if toTime, err := time.Parse("2006-01-02", to); err == nil {
+				toTime = toTime.Add(24 * time.Hour)
+				query = query.Where("created < ?", toTime)
+			}
+		}
+
+		// 🔢 Total count antes de paginar
+		var total int64
+		if err := query.Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 📦 Aplicar orden + paginación
+		if err := query.
+			Order(sort).
+			Limit(limit).
+			Offset(offset).
 			Find(&entities).Error; err != nil {
+
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
 
+		// 🧾 Mapear respuesta
 		response := make([]ContentReview, 0, len(entities))
 		for _, e := range entities {
 			response = append(response, ContentReview{
@@ -66,7 +132,16 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			})
 		}
 
-		c.JSON(http.StatusOK, response)
+		// 📤 Respuesta estructurada
+		c.JSON(http.StatusOK, gin.H{
+			"data": response,
+			"pagination": gin.H{
+				"page":       page,
+				"limit":      limit,
+				"total":      total,
+				"totalPages": int(math.Ceil(float64(total) / float64(limit))),
+			},
+		})
 	})
 	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
 		var entity model.N
