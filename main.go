@@ -32,7 +32,7 @@ func main() {
 	// ✅ CORS CONFIG (ESTO ES CLAVE)
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"}, // en prod poné tu dominio
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Authorization", "Content-Type"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: false,

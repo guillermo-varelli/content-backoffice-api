@@ -5,4 +5,5 @@ type Workflow struct {
 	Name        string `json:"Name"` // Campo para el nombre del workflow
 	Description string
 	Steps       []Step `gorm:"foreignKey:WorkflowID;constraint:OnDelete:CASCADE;"`
+	Enabled     bool   `gorm:"enabled"`
 }

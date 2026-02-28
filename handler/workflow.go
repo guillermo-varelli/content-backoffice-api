@@ -14,53 +14,161 @@ import (
 )
 
 func RegisterWorkflowRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) {
-    g := r.Group("/workflows")
-    // Aplicar autenticación JWT a todas las rutas
-    g.Use(middleware.AuthMiddleware(cfg))
+	g := r.Group("/workflows")
+	g.Use(middleware.AuthMiddleware(cfg))
 
-    // Rutas de lectura requieren scope workflows:read
-    g.GET("", middleware.RequireScopes("workflows:read"), func(c *gin.Context) {
-        page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-        size, _ := strconv.Atoi(c.DefaultQuery("size", "10"))
+	// ==============================
+	// GET /workflows
+	// ==============================
+	g.GET("", middleware.RequireScopes("workflows:read"), func(c *gin.Context) {
 
-        var list []model.Workflow
-        db.Scopes(service.Paginate(page, size)).Find(&list)
-        c.JSON(http.StatusOK, list)
-    })
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		size, _ := strconv.Atoi(c.DefaultQuery("size", "10"))
 
-    // Rutas de escritura requieren scope workflows:write
-    g.POST("", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
-        var w model.Workflow
-        if err := c.ShouldBindJSON(&w); err != nil {
-            c.JSON(http.StatusBadRequest, err)
-            return
-        }
-        db.Create(&w)
-        c.JSON(http.StatusCreated, w)
-    })
+		enabledParam := c.Query("enabled")
 
-    g.PUT("/:id", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
-        id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+		var workflows []model.Workflow
+		query := db.Model(&model.Workflow{})
 
-        var w model.Workflow
-        if err := db.First(&w, id).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
-            return
-        }
+		// Filtro opcional por enabled
+		if enabledParam != "" {
+			enabled, err := strconv.ParseBool(enabledParam)
+			if err == nil {
+				query = query.Where("enabled = ?", enabled)
+			}
+		}
 
-        var input model.Workflow
-        if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, err)
-            return
-        }
+		if err := query.
+			Scopes(service.Paginate(page, size)).
+			Find(&workflows).Error; err != nil {
 
-        db.Model(&w).Updates(input)
-        c.JSON(http.StatusOK, w)
-    })
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch workflows"})
+			return
+		}
 
-    g.DELETE("/:id", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
-        id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-        db.Delete(&model.Workflow{}, id)
-        c.Status(http.StatusNoContent)
-    })
+		c.JSON(http.StatusOK, workflows)
+	})
+
+	// ==============================
+	// POST /workflows
+	// ==============================
+	g.POST("", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
+
+		var w model.Workflow
+		if err := c.ShouldBindJSON(&w); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if err := db.Create(&w).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create workflow"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, w)
+	})
+
+	// ==============================
+	// PUT /workflows/:id
+	// ==============================
+	g.PUT("/:id", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+
+		var existing model.Workflow
+		if err := db.First(&existing, id).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
+			return
+		}
+
+		var input model.Workflow
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Usamos map para asegurar que false se actualice
+		updates := map[string]interface{}{
+			"name":        input.Name,
+			"description": input.Description,
+			"enabled":     input.Enabled,
+		}
+
+		if err := db.Model(&existing).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update workflow"})
+			return
+		}
+
+		// Refetch actualizado
+		db.First(&existing, id)
+
+		c.JSON(http.StatusOK, existing)
+	})
+
+	// ==============================
+	// PATCH /workflows/:id/enabled
+	// ==============================
+	g.PATCH("/:id/enabled", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		result := db.Model(&model.Workflow{}).
+			Where("id = ?", id).
+			Update("enabled", body.Enabled)
+
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
+			return
+		}
+
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update enabled state"})
+			return
+		}
+
+		c.Status(http.StatusOK)
+	})
+
+	// ==============================
+	// DELETE /workflows/:id
+	// ==============================
+	g.DELETE("/:id", middleware.RequireScopes("workflows:write"), func(c *gin.Context) {
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+
+		result := db.Delete(&model.Workflow{}, id)
+
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
+			return
+		}
+
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete workflow"})
+			return
+		}
+
+		c.Status(http.StatusNoContent)
+	})
 }
