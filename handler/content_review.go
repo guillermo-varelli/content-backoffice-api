@@ -37,7 +37,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 	g.GET("", middleware.RequireScopes("content-reviews:read"), func(c *gin.Context) {
 
-		var entities []model.N
+		var entities []model.Content
 
 		// 🔎 Query params
 		status := c.Query("status")
@@ -63,7 +63,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 		offset := (page - 1) * limit
 
-		query := db.Model(&model.N{})
+		query := db.Model(&model.Content{})
 
 		// 🟢 Filtros
 		if status != "" {
@@ -144,7 +144,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		})
 	})
 	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
-		var entity model.N
+		var entity model.Content
 
 		// 1️⃣ Obtener ID de la URL
 		id := c.Param("id")
@@ -193,8 +193,6 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			ShortDescription: entity.ShortDescription,
 			Message:          entity.Message,
 			Status:           entity.Status,
-			Type:             entity.Type,
-			SubType:          entity.SubType,
 			Category:         entity.Category,
 			SubCategory:      entity.SubCategory,
 			ImageURL:         entity.ImageURL,

@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-type N struct {
+type Content struct {
 	ID               uint64 `gorm:"primaryKey"`
 	ExecutionID      uint64
 	Title            string
@@ -20,6 +20,6 @@ type N struct {
 }
 
 // ⚠️ IMPORTANTE si la tabla es literalmente "n"
-func (N) TableName() string {
-	return "n"
+func (Content) TableName() string {
+	return "content"
 }

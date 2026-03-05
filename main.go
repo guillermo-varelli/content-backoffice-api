@@ -24,7 +24,7 @@ func main() {
 		&model.Step{},
 		&model.Execution{},
 		&model.StepExecution{},
-		&model.N{},
+		&model.Content{},
 	)
 
 	r := gin.Default()
