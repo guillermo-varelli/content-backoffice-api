@@ -15,6 +15,7 @@ type Content struct {
 	SubCategory      string
 	ImageURL         string
 	ImagePrompt      string
+	Slug             string
 	Created          time.Time
 	LastUpdated      time.Time
 }

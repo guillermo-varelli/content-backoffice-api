@@ -27,6 +27,7 @@ type ContentReview struct {
 	SubCategory      string    `json:"sub_category"`
 	ImageURL         string    `json:"image_url"`
 	ImagePrompt      string    `json:"image_prompt"`
+	Slug             string    `json:"slug"`
 	CreatedAt        time.Time `json:"created"`
 	UpdatedAt        time.Time `json:"last_updated"`
 }
@@ -127,6 +128,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 				SubCategory:      e.SubCategory,
 				ImageURL:         e.ImageURL,
 				ImagePrompt:      e.ImagePrompt,
+				Slug:             e.Slug,
 				CreatedAt:        e.Created,
 				UpdatedAt:        e.LastUpdated,
 			})
@@ -143,6 +145,16 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			},
 		})
 	})
+	g.DELETE("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
+		id := c.Param("id")
+		result := db.Where("id = ?", id).Delete(&model.Content{})
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+
 	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
 		var entity model.Content
 
@@ -197,6 +209,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			SubCategory:      entity.SubCategory,
 			ImageURL:         entity.ImageURL,
 			ImagePrompt:      entity.ImagePrompt,
+			Slug:             entity.Slug,
 			CreatedAt:        entity.Created,
 			UpdatedAt:        entity.LastUpdated,
 		})
