@@ -9,8 +9,6 @@ type Content struct {
 	ShortDescription string
 	Message          string
 	Status           string
-	Type             string
-	SubType          string
 	Category         string
 	SubCategory      string
 	ImageURL         string

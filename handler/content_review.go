@@ -21,8 +21,6 @@ type ContentReview struct {
 	ShortDescription string    `json:"short_description"`
 	Message          string    `json:"message"`
 	Status           string    `json:"status"`
-	Type             string    `json:"type"`
-	SubType          string    `json:"sub_type"`
 	Category         string    `json:"category"`
 	SubCategory      string    `json:"sub_category"`
 	ImageURL         string    `json:"image_url"`
@@ -122,8 +120,6 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 				ShortDescription: e.ShortDescription,
 				Message:          e.Message,
 				Status:           e.Status,
-				Type:             e.Type,
-				SubType:          e.SubType,
 				Category:         e.Category,
 				SubCategory:      e.SubCategory,
 				ImageURL:         e.ImageURL,
@@ -183,8 +179,6 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		entity.ShortDescription = input.ShortDescription
 		entity.Message = input.Message
 		entity.Status = input.Status
-		entity.Type = input.Type
-		entity.SubType = input.SubType
 		entity.Category = input.Category
 		entity.SubCategory = input.SubCategory
 		entity.ImageURL = input.ImageURL
