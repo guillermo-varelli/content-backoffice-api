@@ -141,58 +141,50 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			},
 		})
 	})
-	g.DELETE("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
-		id := c.Param("id")
-		result := db.Where("id = ?", id).Delete(&model.Content{})
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-			return
+	g.POST("", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
+		var input struct {
+			ExecutionID      uint64 `json:"execution_id"`
+			Title            string `json:"title"`
+			ShortDescription string `json:"short_description"`
+			Message          string `json:"message"`
+			Status           string `json:"status"`
+			Category         string `json:"category"`
+			SubCategory      string `json:"sub_category"`
+			ImageURL         string `json:"image_url"`
+			ImagePrompt      string `json:"image_prompt"`
+			Slug             string `json:"slug"`
 		}
-		c.Status(http.StatusNoContent)
-	})
-
-	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
-		var entity model.Content
-
-		// 1️⃣ Obtener ID de la URL
-		id := c.Param("id")
-
-		// 2️⃣ Buscar registro existente
-		if err := db.First(&entity, id).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "content review not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		// 3️⃣ Bind JSON de entrada
-		var input ContentReview
 		if err := c.ShouldBindJSON(&input); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
-		// 4️⃣ Actualizar campos permitidos
-		entity.Title = input.Title
-		entity.ShortDescription = input.ShortDescription
-		entity.Message = input.Message
-		entity.Status = input.Status
-		entity.Category = input.Category
-		entity.SubCategory = input.SubCategory
-		entity.ImageURL = input.ImageURL
-		entity.ImagePrompt = input.ImagePrompt
-		entity.LastUpdated = time.Now()
-
-		// 5️⃣ Guardar cambios
-		if err := db.Save(&entity).Error; err != nil {
+		if input.Title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+			return
+		}
+		if input.Status == "" {
+			input.Status = "PENDING"
+		}
+		now := time.Now()
+		entity := model.Content{
+			ExecutionID:      input.ExecutionID,
+			Title:            input.Title,
+			ShortDescription: input.ShortDescription,
+			Message:          input.Message,
+			Status:           input.Status,
+			Category:         input.Category,
+			SubCategory:      input.SubCategory,
+			ImageURL:         input.ImageURL,
+			ImagePrompt:      input.ImagePrompt,
+			Slug:             input.Slug,
+			Created:          now,
+			LastUpdated:      now,
+		}
+		if err := db.Create(&entity).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		// 6️⃣ Responder actualizado
-		c.JSON(http.StatusOK, ContentReview{
+		c.JSON(http.StatusCreated, ContentReview{
 			ID:               entity.ID,
 			ExecutionID:      entity.ExecutionID,
 			Title:            entity.Title,
@@ -208,4 +200,90 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			UpdatedAt:        entity.LastUpdated,
 		})
 	})
+
+	g.DELETE("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
+		id := c.Param("id")
+		result := db.Where("id = ?", id).Delete(&model.Content{})
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+
+	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
+		var entity model.Content
+
+		id := c.Param("id")
+
+		// 1️⃣ Bind JSON
+		var input ContentReview
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		now := time.Now()
+
+		// 2️⃣ Buscar si existe
+		err := db.First(&entity, id).Error
+
+		if err != nil {
+			// 🔥 NO EXISTE → CREAR
+			if err == gorm.ErrRecordNotFound {
+
+				newEntity := model.Content{
+					ID:               parseUint(id),
+					ExecutionID:      input.ExecutionID,
+					Title:            input.Title,
+					ShortDescription: input.ShortDescription,
+					Message:          input.Message,
+					Status:           input.Status,
+					Category:         input.Category,
+					SubCategory:      input.SubCategory,
+					ImageURL:         input.ImageURL,
+					ImagePrompt:      input.ImagePrompt,
+					Slug:             input.Slug,
+					Created:          now,
+					LastUpdated:      now,
+				}
+
+				if err := db.Create(&newEntity).Error; err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				c.JSON(http.StatusCreated, newEntity)
+				return
+			}
+
+			// error real de DB
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 🔁 EXISTE → UPDATE
+		entity.Title = input.Title
+		entity.ShortDescription = input.ShortDescription
+		entity.Message = input.Message
+		entity.Status = input.Status
+		entity.Category = input.Category
+		entity.SubCategory = input.SubCategory
+		entity.ImageURL = input.ImageURL
+		entity.ImagePrompt = input.ImagePrompt
+		entity.Slug = input.Slug
+		entity.ExecutionID = input.ExecutionID
+		entity.LastUpdated = now
+
+		if err := db.Save(&entity).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, entity)
+	})
+}
+func parseUint(s string) uint64 {
+	v, _ := strconv.ParseUint(s, 10, 64)
+	return v
 }
