@@ -16,7 +16,6 @@ import (
 
 type ContentReview struct {
 	ID               uint64    `json:"id"`
-	ExecutionID      uint64    `json:"execution_id"`
 	Title            string    `json:"title"`
 	ShortDescription string    `json:"short_description"`
 	Message          string    `json:"message"`
@@ -34,29 +33,27 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 	g := r.Group("/content-reviews")
 	g.Use(middleware.AuthMiddleware(cfg))
 
+	// ===================== GET =====================
 	g.GET("", middleware.RequireScopes("content-reviews:read"), func(c *gin.Context) {
 
 		var entities []model.Content
 
-		// 🔎 Query params
 		status := c.Query("status")
-		executionID := c.Query("execution_id")
 		category := c.Query("category")
 		from := c.Query("from")
 		to := c.Query("to")
 
-		// 📄 Paginación
 		pageStr := c.DefaultQuery("page", "1")
 		limitStr := c.DefaultQuery("limit", "20")
 		sort := c.DefaultQuery("sort", "created desc")
 
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
+		page, _ := strconv.Atoi(pageStr)
+		if page < 1 {
 			page = 1
 		}
 
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 1 || limit > 200 {
+		limit, _ := strconv.Atoi(limitStr)
+		if limit < 1 || limit > 200 {
 			limit = 20
 		}
 
@@ -64,13 +61,8 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 		query := db.Model(&model.Content{})
 
-		// 🟢 Filtros
 		if status != "" {
 			query = query.Where("status = ?", status)
-		}
-
-		if executionID != "" {
-			query = query.Where("execution_id = ?", executionID)
 		}
 
 		if category != "" {
@@ -90,32 +82,23 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			}
 		}
 
-		// 🔢 Total count antes de paginar
 		var total int64
-		if err := query.Count(&total).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		query.Count(&total)
 
-		// 📦 Aplicar orden + paginación
 		if err := query.
 			Order(sort).
 			Limit(limit).
 			Offset(offset).
 			Find(&entities).Error; err != nil {
 
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		// 🧾 Mapear respuesta
 		response := make([]ContentReview, 0, len(entities))
 		for _, e := range entities {
 			response = append(response, ContentReview{
 				ID:               e.ID,
-				ExecutionID:      e.ExecutionID,
 				Title:            e.Title,
 				ShortDescription: e.ShortDescription,
 				Message:          e.Message,
@@ -130,7 +113,6 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			})
 		}
 
-		// 📤 Respuesta estructurada
 		c.JSON(http.StatusOK, gin.H{
 			"data": response,
 			"pagination": gin.H{
@@ -141,9 +123,10 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			},
 		})
 	})
+
+	// ===================== POST (CREATE) =====================
 	g.POST("", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
 		var input struct {
-			ExecutionID      uint64 `json:"execution_id"`
 			Title            string `json:"title"`
 			ShortDescription string `json:"short_description"`
 			Message          string `json:"message"`
@@ -154,20 +137,24 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			ImagePrompt      string `json:"image_prompt"`
 			Slug             string `json:"slug"`
 		}
+
 		if err := c.ShouldBindJSON(&input); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
 		if input.Title == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
 			return
 		}
+
 		if input.Status == "" {
 			input.Status = "PENDING"
 		}
+
 		now := time.Now()
+
 		entity := model.Content{
-			ExecutionID:      input.ExecutionID,
 			Title:            input.Title,
 			ShortDescription: input.ShortDescription,
 			Message:          input.Message,
@@ -180,13 +167,14 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 			Created:          now,
 			LastUpdated:      now,
 		}
+
 		if err := db.Create(&entity).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
 		c.JSON(http.StatusCreated, ContentReview{
 			ID:               entity.ID,
-			ExecutionID:      entity.ExecutionID,
 			Title:            entity.Title,
 			ShortDescription: entity.ShortDescription,
 			Message:          entity.Message,
@@ -201,68 +189,34 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		})
 	})
 
+	// ===================== DELETE =====================
 	g.DELETE("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
 		id := c.Param("id")
-		result := db.Where("id = ?", id).Delete(&model.Content{})
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+
+		if err := db.Delete(&model.Content{}, id).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
 		c.Status(http.StatusNoContent)
 	})
 
+	// ===================== PUT (UPDATE) =====================
 	g.PUT("/:id", middleware.RequireScopes("content-reviews:write"), func(c *gin.Context) {
 		var entity model.Content
-
 		id := c.Param("id")
 
-		// 1️⃣ Bind JSON
 		var input ContentReview
 		if err := c.ShouldBindJSON(&input); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		now := time.Now()
-
-		// 2️⃣ Buscar si existe
-		err := db.First(&entity, id).Error
-
-		if err != nil {
-			// 🔥 NO EXISTE → CREAR
-			if err == gorm.ErrRecordNotFound {
-
-				newEntity := model.Content{
-					ID:               parseUint(id),
-					ExecutionID:      input.ExecutionID,
-					Title:            input.Title,
-					ShortDescription: input.ShortDescription,
-					Message:          input.Message,
-					Status:           input.Status,
-					Category:         input.Category,
-					SubCategory:      input.SubCategory,
-					ImageURL:         input.ImageURL,
-					ImagePrompt:      input.ImagePrompt,
-					Slug:             input.Slug,
-					Created:          now,
-					LastUpdated:      now,
-				}
-
-				if err := db.Create(&newEntity).Error; err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-
-				c.JSON(http.StatusCreated, newEntity)
-				return
-			}
-
-			// error real de DB
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if err := db.First(&entity, id).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "content not found"})
 			return
 		}
 
-		// 🔁 EXISTE → UPDATE
 		entity.Title = input.Title
 		entity.ShortDescription = input.ShortDescription
 		entity.Message = input.Message
@@ -272,8 +226,7 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 		entity.ImageURL = input.ImageURL
 		entity.ImagePrompt = input.ImagePrompt
 		entity.Slug = input.Slug
-		entity.ExecutionID = input.ExecutionID
-		entity.LastUpdated = now
+		entity.LastUpdated = time.Now()
 
 		if err := db.Save(&entity).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -282,8 +235,4 @@ func RegisterContentReviewRoutes(r *gin.Engine, db *gorm.DB, cfg config.Config) 
 
 		c.JSON(http.StatusOK, entity)
 	})
-}
-func parseUint(s string) uint64 {
-	v, _ := strconv.ParseUint(s, 10, 64)
-	return v
 }
